@@ -2,17 +2,17 @@ import json
 import re
 import socket
 import subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 
 ENVIRONMENT = "production"
 HOSTNAME = socket.gethostname()
 
 def extract_ip(line):
-    match = re.search(r'from (\d+\.\d+\.\d+\.\d+)', line)
+    match = re.search(r'from ([\d\.]+|::1|[\da-fA-F:]+) ', line)
     return match.group(1) if match else None
 
 def extract_user(line):
-    match = re.search(r'for (?:invalid user )?(\w+)', line)
+    match = re.search(r'(?:for invalid user|for user|for)\s+(\w+)', line)
     return match.group(1) if match else None
 
 def extract_service(line):
@@ -21,7 +21,7 @@ def extract_service(line):
 
 def parse_line(line):
     event = {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "environment": ENVIRONMENT,
         "hostname": HOSTNAME,
         "source": "linux-auth",
