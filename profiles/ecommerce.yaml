@@ -1,0 +1,30 @@
+business_type: ecommerce
+description: Profile for online retail businesses
+
+# Working hours (24h format)
+working_hours:
+  start: 6
+  end: 23
+  timezone: UTC
+
+# Alert thresholds (overrides default rules)
+thresholds:
+  brute_force_ssh: 10
+  auth_failure_burst: 5
+  invalid_user_probe: 5
+
+# Whitelisted IPs (payment gateways, partners)
+whitelist_ips:
+  - 127.0.0.1
+
+# Alert channels
+alerts:
+  email: false
+  slack: false
+  log_file: true
+
+# Priority sources
+priority_sources:
+  - linux-auth
+  - nginx
+  - firewall

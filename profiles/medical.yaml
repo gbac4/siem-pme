@@ -1,0 +1,30 @@
+business_type: medical
+description: Profile for medical practices and clinics
+
+# Working hours - strict for medical
+working_hours:
+  start: 7
+  end: 20
+  timezone: UTC
+
+# Stricter thresholds than ecommerce
+thresholds:
+  brute_force_ssh: 3
+  auth_failure_burst: 2
+  invalid_user_probe: 2
+
+# Whitelisted IPs
+whitelist_ips:
+  - 127.0.0.1
+
+# Alert channels
+alerts:
+  email: true
+  slack: true
+  log_file: true
+
+# Priority sources
+priority_sources:
+  - linux-auth
+  - firewall
+  - database
