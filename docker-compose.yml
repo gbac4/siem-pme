@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  elasticsearch:
+    image: elasticsearch:8.13.0
+    container_name: siem-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    volumes:
+      - esdata:/var/lib/elasticsearch/data
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: siem-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=siem2026
+    volumes:
+      - grafanadata:/var/lib/grafana
+    depends_on:
+      - elasticsearch
+
+volumes:
+  esdata:
+  grafanadata:

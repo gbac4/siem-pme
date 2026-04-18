@@ -2,6 +2,7 @@ import json
 import socket
 import subprocess
 import re
+import requests
 from datetime import datetime, timezone
 
 from parser.normalizer import normalize
@@ -10,6 +11,7 @@ from engine.scorer import score_event
 
 ENVIRONMENT = "production"
 HOSTNAME = socket.gethostname()
+ES_URL = "http://localhost:9200/siem-events/_doc"
 
 RED     = "\033[91m"
 YELLOW  = "\033[93m"
@@ -73,6 +75,38 @@ def parse_line(line):
 
     return event
 
+def send_to_elasticsearch(event, score, alerts):
+    doc = {
+        "@timestamp": event.get("timestamp"),
+        "environment": event.get("environment"),
+        "hostname": event.get("hostname"),
+        "source": event.get("source"),
+        "event_type": event.get("event_type"),
+        "severity": event.get("severity"),
+        "source_ip": event.get("source_ip"),
+        "username": event.get("username"),
+        "service": event.get("service"),
+        "tags": event.get("tags", []),
+        "risk_level": score.get("risk_level"),
+        "combined_score": score.get("combined_score"),
+        "ip_score": score.get("ip_score"),
+        "user_score": score.get("user_score"),
+        "alerts": [a.get("alert") for a in alerts],
+        "alert_descriptions": [a.get("description") for a in alerts],
+        "raw": event.get("raw")
+    }
+
+    try:
+        response = requests.post(
+            ES_URL,
+            json=doc,
+            timeout=5
+        )
+        if response.status_code not in [200, 201]:
+            print(f"[ES ERROR] {response.status_code} — {response.text}")
+    except requests.exceptions.ConnectionError:
+        print(f"{RED}[ES ERROR] Cannot connect to Elasticsearch{RESET}")
+
 def print_event(event, score, alerts):
     risk = score.get("risk_level", "NORMAL")
 
@@ -98,7 +132,7 @@ def run():
     print(f"{BLUE}[*] SIEM-PME started{RESET}")
     print(f"{BLUE}[*] Environment : {ENVIRONMENT}{RESET}")
     print(f"{BLUE}[*] Hostname    : {HOSTNAME}{RESET}")
-    print(f"{BLUE}[*] Pipeline    : collector → normalizer → rules → scorer{RESET}\n")
+    print(f"{BLUE}[*] Pipeline    : collector → normalizer → rules → scorer → elasticsearch{RESET}\n")
 
     process = subprocess.Popen(
         ["journalctl", "-f", "-n", "0"],
@@ -118,6 +152,7 @@ def run():
         score = score_event(normalized)
 
         print_event(normalized, score, alerts)
+        send_to_elasticsearch(normalized, score, alerts)
 
         if alerts or score["risk_level"] in ["HIGH", "CRITICAL"]:
             print(json.dumps(normalized, indent=2))
