@@ -3,15 +3,20 @@ import socket
 import subprocess
 import re
 import requests
+import os
 from datetime import datetime, timezone
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from parser.normalizer import normalize
 from engine.rules import check_rules
 from engine.scorer import score_event
+from engine.alerting import send_discord_alert, send_high_score_alert
 
-ENVIRONMENT = "production"
+ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
 HOSTNAME = socket.gethostname()
-ES_URL = "http://localhost:9200/siem-events/_doc"
+ES_URL = os.getenv("ES_URL", "http://localhost:9200/siem-events/_doc")
 
 RED     = "\033[91m"
 YELLOW  = "\033[93m"
@@ -97,11 +102,7 @@ def send_to_elasticsearch(event, score, alerts):
     }
 
     try:
-        response = requests.post(
-            ES_URL,
-            json=doc,
-            timeout=5
-        )
+        response = requests.post(ES_URL, json=doc, timeout=5)
         if response.status_code not in [200, 201]:
             print(f"[ES ERROR] {response.status_code} — {response.text}")
     except requests.exceptions.ConnectionError:
@@ -132,7 +133,7 @@ def run():
     print(f"{BLUE}[*] SIEM-PME started{RESET}")
     print(f"{BLUE}[*] Environment : {ENVIRONMENT}{RESET}")
     print(f"{BLUE}[*] Hostname    : {HOSTNAME}{RESET}")
-    print(f"{BLUE}[*] Pipeline    : collector → normalizer → rules → scorer → elasticsearch{RESET}\n")
+    print(f"{BLUE}[*] Pipeline    : collector → normalizer → rules → scorer → elasticsearch → discord{RESET}\n")
 
     process = subprocess.Popen(
         ["journalctl", "-f", "-n", "0"],
@@ -154,10 +155,11 @@ def run():
         print_event(normalized, score, alerts)
         send_to_elasticsearch(normalized, score, alerts)
 
-        if alerts or score["risk_level"] in ["HIGH", "CRITICAL"]:
-            print(json.dumps(normalized, indent=2))
-            print(json.dumps(score, indent=2))
-            print()
+        for alert in alerts:
+            send_discord_alert(alert, normalized, score)
+
+        if score["risk_level"] in ["HIGH", "CRITICAL"] and not alerts:
+            send_high_score_alert(normalized, score)
 
 if __name__ == "__main__":
     run()
