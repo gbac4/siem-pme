@@ -6,7 +6,8 @@ import requests
 import os
 from datetime import datetime, timezone
 from dotenv import load_dotenv
-
+import urllib3
+urllib3.disable_warnings()
 load_dotenv()
 
 from parser.normalizer import normalize
@@ -102,12 +103,17 @@ def send_to_elasticsearch(event, score, alerts):
     }
 
     try:
-        response = requests.post(ES_URL, json=doc, timeout=5)
+        response = requests.post(
+            ES_URL,
+            json=doc,
+            auth=(os.getenv("ES_USER"), os.getenv("ES_PASSWORD")),
+            verify=False,
+            timeout=5
+        )
         if response.status_code not in [200, 201]:
             print(f"[ES ERROR] {response.status_code} — {response.text}")
     except requests.exceptions.ConnectionError:
         print(f"{RED}[ES ERROR] Cannot connect to Elasticsearch{RESET}")
-
 def print_event(event, score, alerts):
     risk = score.get("risk_level", "NORMAL")
 

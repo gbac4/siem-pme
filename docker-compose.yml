@@ -1,17 +1,25 @@
-version: '3.8'
-
 services:
   elasticsearch:
     image: elasticsearch:8.13.0
     container_name: siem-elasticsearch
     environment:
       - discovery.type=single-node
-      - xpack.security.enabled=false
+      - xpack.security.enabled=true
+      - xpack.security.http.ssl.enabled=true
+      - xpack.security.http.ssl.key=/usr/share/elasticsearch/config/certs/elasticsearch.key
+      - xpack.security.http.ssl.certificate=/usr/share/elasticsearch/config/certs/elasticsearch.crt
+      - ELASTIC_PASSWORD=SiemPME2026!
       - ES_JAVA_OPTS=-Xms512m -Xmx512m
     ports:
       - "9200:9200"
     volumes:
       - esdata:/var/lib/elasticsearch/data
+      - ./certs:/usr/share/elasticsearch/config/certs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sk https://localhost:9200 -u elastic:SiemPME2026! | grep -q cluster_name"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   grafana:
     image: grafana/grafana:latest
@@ -20,6 +28,7 @@ services:
       - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=siem2026
+      - GF_SERVER_PROTOCOL=http
     volumes:
       - grafanadata:/var/lib/grafana
     depends_on:
