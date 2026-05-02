@@ -1,0 +1,16 @@
+{
+  "ips": {
+    "192.168.1.1": {
+      "reason": "router - never alert",
+      "added_at": "2026-05-02T23:16:28.397955+00:00",
+      "added_by": "analyst"
+    }
+  },
+  "users": {
+    "backup": {
+      "reason": "backup service account",
+      "added_at": "2026-05-02T23:17:23.663381+00:00",
+      "added_by": "analyst"
+    }
+  }
+}

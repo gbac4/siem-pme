@@ -1,0 +1,39 @@
+{
+  "false_positives": [
+    {
+      "timestamp": "2026-05-02T23:18:19.438956+00:00",
+      "ip": "::1",
+      "username": "fakeuser",
+      "alert_type": "brute_force_ssh",
+      "reason": "internal test - not a real attack"
+    },
+    {
+      "timestamp": "2026-05-02T23:19:36.796964+00:00",
+      "ip": "::1",
+      "username": "fakeuser",
+      "alert_type": "brute_force_ssh",
+      "reason": "internal test"
+    },
+    {
+      "timestamp": "2026-05-02T23:19:36.814560+00:00",
+      "ip": "::1",
+      "username": "fakeuser",
+      "alert_type": "brute_force_ssh",
+      "reason": "internal test"
+    },
+    {
+      "timestamp": "2026-05-02T23:21:27.121111+00:00",
+      "ip": "::1",
+      "username": "fakeuser",
+      "alert_type": "brute_force_ssh",
+      "reason": "internal test"
+    },
+    {
+      "timestamp": "2026-05-02T23:21:27.137187+00:00",
+      "ip": "::1",
+      "username": "fakeuser",
+      "alert_type": "brute_force_ssh",
+      "reason": "internal test"
+    }
+  ]
+}
