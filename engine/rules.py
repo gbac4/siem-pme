@@ -1,11 +1,9 @@
 from datetime import datetime, timezone, timedelta
 from collections import defaultdict
 import json
+import os
 
 WINDOW_SECONDS = 60
-
-failed_logins = defaultdict(list)
-auth_failures = defaultdict(list)
 
 RULES = {
     "brute_force_ssh": {
@@ -36,11 +34,34 @@ WHITELIST_USERS = ["backup", "monitor"]
 
 event_store = defaultdict(list)
 
+def load_dynamic_whitelist():
+    filepath = "data/whitelist.json"
+    if not os.path.exists(filepath):
+        return set(), set()
+    try:
+        with open(filepath, 'r') as f:
+            data = json.load(f)
+        ips = set(data.get("ips", {}).keys())
+        users = set(data.get("users", {}).keys())
+        return ips, users
+    except Exception:
+        return set(), set()
+
 def is_whitelisted(event):
-    if event.get("source_ip") in WHITELIST_IPS:
+    dynamic_ips, dynamic_users = load_dynamic_whitelist()
+    all_ips = set(WHITELIST_IPS) | dynamic_ips
+    all_users = set(WHITELIST_USERS) | dynamic_users
+
+    if event.get("source_ip") in all_ips:
         return True
-    if event.get("username") in WHITELIST_USERS:
+    if event.get("username") in all_users:
         return True
+
+    raw = event.get("raw", "")
+    for ip in all_ips:
+        if ip in raw:
+            return True
+
     return False
 
 def clean_old_events(store, key, window_seconds):

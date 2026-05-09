@@ -11,7 +11,7 @@ urllib3.disable_warnings()
 load_dotenv()
 
 from parser.normalizer import normalize
-from engine.rules import check_rules
+from engine.rules import check_rules, is_whitelisted
 from engine.scorer import score_event
 from engine.alerting import send_discord_alert, send_high_score_alert
 
@@ -114,6 +114,7 @@ def send_to_elasticsearch(event, score, alerts):
             print(f"[ES ERROR] {response.status_code} — {response.text}")
     except requests.exceptions.ConnectionError:
         print(f"{RED}[ES ERROR] Cannot connect to Elasticsearch{RESET}")
+
 def print_event(event, score, alerts):
     risk = score.get("risk_level", "NORMAL")
 
@@ -155,6 +156,10 @@ def run():
             continue
 
         normalized = normalize(raw_event)
+
+        if is_whitelisted(normalized):
+            continue
+
         alerts = check_rules(normalized)
         score = score_event(normalized)
 
