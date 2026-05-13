@@ -4,11 +4,6 @@
       "reason": "router - never alert",
       "added_at": "2026-05-02T23:16:28.397955+00:00",
       "added_by": "analyst"
-    },
-    "::1": {
-      "reason": "localhost testing",
-      "added_at": "2026-05-06T04:09:42.507440+00:00",
-      "added_by": "analyst"
     }
   },
   "users": {

@@ -4,6 +4,8 @@ import subprocess
 import re
 import requests
 import os
+import asyncio
+import threading
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 import urllib3
@@ -14,6 +16,7 @@ from parser.normalizer import normalize
 from engine.rules import check_rules, is_whitelisted
 from engine.scorer import score_event
 from engine.alerting import send_discord_alert, send_high_score_alert
+from engine.discord_bot import run_bot, send_block_request, client
 
 ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
 HOSTNAME = socket.gethostname()
@@ -136,11 +139,27 @@ def print_event(event, score, alerts):
     for alert in alerts:
         print(f"{RED}  [ALERT] {alert['alert']} — {alert['description']}{RESET}")
 
+def trigger_block_request(normalized, score):
+    source_ip = normalized.get("source_ip")
+    if source_ip:
+        asyncio.run_coroutine_threadsafe(
+            send_block_request(
+                source_ip,
+                normalized.get("username"),
+                score.get("combined_score")
+            ),
+            client.loop
+        )
+
 def run():
     print(f"{BLUE}[*] SIEM-PME started{RESET}")
     print(f"{BLUE}[*] Environment : {ENVIRONMENT}{RESET}")
     print(f"{BLUE}[*] Hostname    : {HOSTNAME}{RESET}")
     print(f"{BLUE}[*] Pipeline    : collector → normalizer → rules → scorer → elasticsearch → discord{RESET}\n")
+
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    bot_thread.start()
+    print(f"{BLUE}[*] Discord bot started{RESET}\n")
 
     process = subprocess.Popen(
         ["journalctl", "-f", "-n", "0"],
@@ -168,9 +187,11 @@ def run():
 
         for alert in alerts:
             send_discord_alert(alert, normalized, score)
+            trigger_block_request(normalized, score)
 
-        if score["risk_level"] in ["HIGH", "CRITICAL"] and not alerts:
+        if score["risk_level"] == "CRITICAL" and not alerts:
             send_high_score_alert(normalized, score)
+            trigger_block_request(normalized, score)
 
 if __name__ == "__main__":
     run()
