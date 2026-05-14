@@ -8,6 +8,7 @@ import asyncio
 import threading
 from datetime import datetime, timezone
 from dotenv import load_dotenv
+from engine.travel_detector import check_impossible_travel
 import urllib3
 urllib3.disable_warnings()
 load_dotenv()
@@ -181,6 +182,21 @@ def run():
 
         alerts = check_rules(normalized)
         score = score_event(normalized)
+        travel_alert = check_impossible_travel(
+            username=normalized.get("username"),
+            source_ip=normalized.get("source_ip"),
+            timestamp=normalized.get("timestamp")
+        )
+        if travel_alert:
+            print(f"{RED}[IMPOSSIBLE TRAVEL] {travel_alert['description']}{RESET}")
+            asyncio.run_coroutine_threadsafe(
+                send_block_request(
+                    travel_alert.get("source_ip"),
+                    travel_alert.get("username"),
+                    999.0
+                ),
+                client.loop
+            )
 
         print_event(normalized, score, alerts)
         send_to_elasticsearch(normalized, score, alerts)
