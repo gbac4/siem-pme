@@ -14,6 +14,7 @@ import urllib3
 urllib3.disable_warnings()
 load_dotenv()
 
+from engine.anomaly_detector import detect_anomaly
 from parser.normalizer import normalize
 from engine.rules import check_rules, is_whitelisted
 from engine.scorer import score_event
@@ -185,6 +186,9 @@ def run():
 
         alerts = check_rules(normalized)
         score = score_event(normalized)
+        ml_alert = detect_anomaly(normalized)
+        if ml_alert:
+            print(f"{RED}[ML ANOMALY] {ml_alert['description']}{RESET}")
         travel_alert = check_impossible_travel(
             username=normalized.get("username"),
             source_ip=normalized.get("source_ip"),

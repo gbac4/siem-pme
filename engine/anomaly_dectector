@@ -1,0 +1,191 @@
+import json
+import os
+import numpy as np
+from datetime import datetime, timezone
+from sklearn.ensemble import IsolationForest
+from sklearn.preprocessing import LabelEncoder
+from dotenv import load_dotenv
+import requests
+import urllib3
+urllib3.disable_warnings()
+load_dotenv()
+
+ES_URL = os.getenv("ES_URL", "https://localhost:9200")
+ES_USER = os.getenv("ES_USER", "elastic")
+ES_PASSWORD = os.getenv("ES_PASSWORD", "SiemPME2026!")
+
+MODEL_FILE = "data/isolation_forest_model.json"
+
+EVENT_TYPE_MAP = {
+    "failed_login": 0,
+    "successful_login": 1,
+    "invalid_user": 2,
+    "auth_failure": 3,
+    "sudo_command": 4,
+    "session_opened": 5,
+    "session_closed": 6,
+    "process_created": 7,
+    "account_created": 8,
+    "service_installed": 9,
+    "info": 10
+}
+
+SEVERITY_MAP = {
+    "LOW": 0,
+    "MEDIUM": 1,
+    "HIGH": 2,
+    "CRITICAL": 3
+}
+
+RISK_MAP = {
+    "NORMAL": 0,
+    "ELEVATED": 1,
+    "HIGH": 2,
+    "CRITICAL": 3
+}
+
+def event_to_features(event):
+    timestamp = event.get("@timestamp") or event.get("timestamp", "")
+    try:
+        dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        hour = dt.hour
+        day_of_week = dt.weekday()
+    except Exception:
+        hour = 12
+        day_of_week = 0
+
+    event_type = EVENT_TYPE_MAP.get(event.get("event_type", "info"), 10)
+    severity = SEVERITY_MAP.get(event.get("severity", "LOW"), 0)
+    risk = RISK_MAP.get(event.get("risk_level", "NORMAL"), 0)
+    combined_score = float(event.get("combined_score", 0) or 0)
+    has_alert = 1 if event.get("alerts") else 0
+    has_ip = 1 if event.get("source_ip") else 0
+    has_user = 1 if event.get("username") else 0
+
+    return [
+        hour,
+        day_of_week,
+        event_type,
+        severity,
+        risk,
+        combined_score,
+        has_alert,
+        has_ip,
+        has_user
+    ]
+
+def fetch_training_data(limit=500):
+    query = {
+        "query": {"match_all": {}},
+        "size": limit,
+        "sort": [{"@timestamp": {"order": "desc"}}]
+    }
+    try:
+        response = requests.post(
+            f"{ES_URL}/siem-events/_search",
+            json=query,
+            auth=(ES_USER, ES_PASSWORD),
+            verify=False,
+            timeout=10
+        )
+        hits = response.json().get("hits", {}).get("hits", [])
+        return [h["_source"] for h in hits]
+    except Exception as e:
+        print(f"[ANOMALY ERROR] {e}")
+        return []
+
+model = None
+
+def train_model():
+    global model
+    print("[ANOMALY] Fetching training data from Elasticsearch...")
+    events = fetch_training_data(500)
+
+    if len(events) < 10:
+        print(f"[ANOMALY] Not enough data to train — {len(events)} events found")
+        return False
+
+    features = [event_to_features(e) for e in events]
+    X = np.array(features)
+
+    print(f"[ANOMALY] Training Isolation Forest on {len(events)} events...")
+    model = IsolationForest(
+        n_estimators=100,
+        contamination=0.05,
+        random_state=42
+    )
+    model.fit(X)
+    print("[ANOMALY] Model trained successfully")
+    return True
+
+def detect_anomaly(event):
+    global model
+
+    if model is None:
+        success = train_model()
+        if not success:
+            return None
+
+    features = event_to_features(event)
+    X = np.array([features])
+
+    prediction = model.predict(X)[0]
+    score = model.score_samples(X)[0]
+
+    is_anomaly = prediction == -1
+
+    if is_anomaly:
+        return {
+            "type": "ml_anomaly",
+            "severity": "HIGH",
+            "anomaly_score": round(float(score), 4),
+            "event_type": event.get("event_type"),
+            "source_ip": event.get("source_ip"),
+            "username": event.get("username"),
+            "timestamp": event.get("timestamp") or event.get("@timestamp"),
+            "description": f"ML anomaly detected — unusual pattern (score: {round(float(score), 4)})"
+        }
+    return None
+
+if __name__ == "__main__":
+    print("[*] Testing Isolation Forest anomaly detection\n")
+
+    success = train_model()
+    if not success:
+        print("[*] Creating synthetic test data...")
+        model = IsolationForest(n_estimators=100, contamination=0.05, random_state=42)
+        X_fake = np.random.rand(100, 9)
+        model.fit(X_fake)
+
+    test_normal = {
+        "timestamp": "2026-05-14T09:00:00+00:00",
+        "event_type": "successful_login",
+        "severity": "LOW",
+        "risk_level": "NORMAL",
+        "combined_score": 5.0,
+        "alerts": [],
+        "source_ip": "192.168.1.1",
+        "username": "admin"
+    }
+
+    test_anomaly = {
+        "timestamp": "2026-05-14T03:00:00+00:00",
+        "event_type": "sudo_command",
+        "severity": "CRITICAL",
+        "risk_level": "CRITICAL",
+        "combined_score": 95.0,
+        "alerts": ["brute_force_ssh"],
+        "source_ip": "185.220.101.1",
+        "username": "root"
+    }
+
+    print("[*] Testing normal event:")
+    result = detect_anomaly(test_normal)
+    print(f"  Anomaly: {result is not None} — {result}")
+
+    print("\n[*] Testing suspicious event:")
+    result = detect_anomaly(test_anomaly)
+    print(f"  Anomaly: {result is not None}")
+    if result:
+        import json
+        print(json.dumps(result, indent=2))
