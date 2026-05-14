@@ -1,0 +1,22 @@
+{
+  "testuser": [
+    {
+      "ip": "8.8.8.8",
+      "city": "Ashburn",
+      "country": "United States",
+      "lat": 39.03,
+      "lon": -77.5,
+      "timestamp": "2026-05-14T21:59:26.519313+00:00",
+      "is_vpn": false
+    },
+    {
+      "ip": "1.1.1.1",
+      "city": "South Brisbane",
+      "country": "Australia",
+      "lat": -27.4766,
+      "lon": 153.0166,
+      "timestamp": "2026-05-14T21:59:28.701204+00:00",
+      "is_vpn": false
+    }
+  ]
+}
