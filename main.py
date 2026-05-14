@@ -9,6 +9,7 @@ import threading
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from engine.travel_detector import check_impossible_travel
+from engine.scheduler import run_scheduler
 import urllib3
 urllib3.disable_warnings()
 load_dotenv()
@@ -161,7 +162,9 @@ def run():
     bot_thread = threading.Thread(target=run_bot, daemon=True)
     bot_thread.start()
     print(f"{BLUE}[*] Discord bot started{RESET}\n")
-
+    scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
+    scheduler_thread.start()
+    print(f"{BLUE}[*] Report scheduler started — weekly report every Monday 08:00 UTC{RESET}\n")
     process = subprocess.Popen(
         ["journalctl", "-f", "-n", "0"],
         stdout=subprocess.PIPE,
