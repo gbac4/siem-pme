@@ -8,18 +8,21 @@ import asyncio
 import threading
 from datetime import datetime, timezone
 from dotenv import load_dotenv
-from engine.travel_detector import check_impossible_travel
-from engine.scheduler import run_scheduler
 import urllib3
 urllib3.disable_warnings()
 load_dotenv()
 
-from engine.anomaly_detector import detect_anomaly
 from parser.normalizer import normalize
 from engine.rules import check_rules, is_whitelisted
 from engine.scorer import score_event
 from engine.alerting import send_discord_alert, send_high_score_alert
 from engine.discord_bot import run_bot, send_block_request, client
+from engine.travel_detector import check_impossible_travel
+from engine.anomaly_detector import detect_anomaly
+from engine.scheduler import run_scheduler
+from engine.logger import get_logger
+
+logger = get_logger(__name__)
 
 ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
 HOSTNAME = socket.gethostname()
@@ -117,9 +120,11 @@ def send_to_elasticsearch(event, score, alerts):
             timeout=5
         )
         if response.status_code not in [200, 201]:
-            print(f"[ES ERROR] {response.status_code} — {response.text}")
+            logger.error(f"Elasticsearch error {response.status_code}: {response.text}")
     except requests.exceptions.ConnectionError:
-        print(f"{RED}[ES ERROR] Cannot connect to Elasticsearch{RESET}")
+        logger.error("Cannot connect to Elasticsearch")
+    except Exception as e:
+        logger.error(f"Unexpected error sending to Elasticsearch: {e}")
 
 def print_event(event, score, alerts):
     risk = score.get("risk_level", "NORMAL")
@@ -155,6 +160,9 @@ def trigger_block_request(normalized, score):
         )
 
 def run():
+    logger.info(f"SIEM-PME started — environment={ENVIRONMENT} hostname={HOSTNAME}")
+    logger.info(f"Pipeline: collector → normalizer → rules → scorer → elasticsearch → discord")
+
     print(f"{BLUE}[*] SIEM-PME started{RESET}")
     print(f"{BLUE}[*] Environment : {ENVIRONMENT}{RESET}")
     print(f"{BLUE}[*] Hostname    : {HOSTNAME}{RESET}")
@@ -162,10 +170,14 @@ def run():
 
     bot_thread = threading.Thread(target=run_bot, daemon=True)
     bot_thread.start()
+    logger.info("Discord bot thread started")
     print(f"{BLUE}[*] Discord bot started{RESET}\n")
+
     scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
     scheduler_thread.start()
-    print(f"{BLUE}[*] Report scheduler started — weekly report every Monday 08:00 UTC{RESET}\n")
+    logger.info("Report scheduler thread started")
+    print(f"{BLUE}[*] Report scheduler started{RESET}\n")
+
     process = subprocess.Popen(
         ["journalctl", "-f", "-n", "0"],
         stdout=subprocess.PIPE,
@@ -173,48 +185,55 @@ def run():
         text=True
     )
 
+    logger.info("journalctl collector started")
+
     for line in process.stdout:
-        raw_event = parse_line(line)
+        try:
+            raw_event = parse_line(line)
 
-        if raw_event["event_type"] == "info":
-            continue
+            if raw_event["event_type"] == "info":
+                continue
 
-        normalized = normalize(raw_event)
+            normalized = normalize(raw_event)
 
-        if is_whitelisted(normalized):
-            continue
+            if is_whitelisted(normalized):
+                logger.debug(f"Whitelisted event skipped: ip={normalized.get('source_ip')} user={normalized.get('username')}")
+                continue
 
-        alerts = check_rules(normalized)
-        score = score_event(normalized)
-        ml_alert = detect_anomaly(normalized)
-        if ml_alert:
-            print(f"{RED}[ML ANOMALY] {ml_alert['description']}{RESET}")
-        travel_alert = check_impossible_travel(
-            username=normalized.get("username"),
-            source_ip=normalized.get("source_ip"),
-            timestamp=normalized.get("timestamp")
-        )
-        if travel_alert:
-            print(f"{RED}[IMPOSSIBLE TRAVEL] {travel_alert['description']}{RESET}")
-            asyncio.run_coroutine_threadsafe(
-                send_block_request(
-                    travel_alert.get("source_ip"),
-                    travel_alert.get("username"),
-                    999.0
-                ),
-                client.loop
+            alerts = check_rules(normalized)
+            score = score_event(normalized)
+
+            ml_alert = detect_anomaly(normalized)
+            if ml_alert:
+                logger.warning(f"ML anomaly detected: {ml_alert['description']}")
+                print(f"{RED}[ML ANOMALY] {ml_alert['description']}{RESET}")
+
+            travel_alert = check_impossible_travel(
+                username=normalized.get("username"),
+                source_ip=normalized.get("source_ip"),
+                timestamp=normalized.get("timestamp")
             )
+            if travel_alert:
+                logger.critical(f"Impossible travel: {travel_alert['description']}")
+                print(f"{RED}[IMPOSSIBLE TRAVEL] {travel_alert['description']}{RESET}")
+                trigger_block_request(normalized, score)
 
-        print_event(normalized, score, alerts)
-        send_to_elasticsearch(normalized, score, alerts)
+            print_event(normalized, score, alerts)
+            send_to_elasticsearch(normalized, score, alerts)
 
-        for alert in alerts:
-            send_discord_alert(alert, normalized, score)
-            trigger_block_request(normalized, score)
+            for alert in alerts:
+                logger.warning(f"Alert triggered: {alert['alert']} ip={alert.get('source_ip')} user={alert.get('username')}")
+                send_discord_alert(alert, normalized, score)
+                trigger_block_request(normalized, score)
 
-        if score["risk_level"] == "CRITICAL" and not alerts:
-            send_high_score_alert(normalized, score)
-            trigger_block_request(normalized, score)
+            if score["risk_level"] == "CRITICAL" and not alerts:
+                send_high_score_alert(normalized, score)
+                trigger_block_request(normalized, score)
+            elif score["risk_level"] == "HIGH" and not alerts:
+                send_high_score_alert(normalized, score)
+
+        except Exception as e:
+            logger.error(f"Pipeline error: {e}", exc_info=True)
 
 if __name__ == "__main__":
     run()
