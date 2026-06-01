@@ -12,6 +12,8 @@ import urllib3
 urllib3.disable_warnings()
 load_dotenv()
 
+from engine.event_buffer import get_buffer, init_buffer
+from engine.logger import get_logger
 from parser.normalizer import normalize
 from engine.rules import check_rules, is_whitelisted
 from engine.scorer import score_event
@@ -20,7 +22,6 @@ from engine.discord_bot import run_bot, send_block_request, client
 from engine.travel_detector import check_impossible_travel
 from engine.anomaly_detector import detect_anomaly
 from engine.scheduler import run_scheduler
-from engine.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -110,21 +111,7 @@ def send_to_elasticsearch(event, score, alerts):
         "alert_descriptions": [a.get("description") for a in alerts],
         "raw": event.get("raw")
     }
-
-    try:
-        response = requests.post(
-            ES_URL,
-            json=doc,
-            auth=(os.getenv("ES_USER"), os.getenv("ES_PASSWORD")),
-            verify=False,
-            timeout=5
-        )
-        if response.status_code not in [200, 201]:
-            logger.error(f"Elasticsearch error {response.status_code}: {response.text}")
-    except requests.exceptions.ConnectionError:
-        logger.error("Cannot connect to Elasticsearch")
-    except Exception as e:
-        logger.error(f"Unexpected error sending to Elasticsearch: {e}")
+    get_buffer().put(doc)
 
 def print_event(event, score, alerts):
     risk = score.get("risk_level", "NORMAL")
@@ -160,8 +147,8 @@ def trigger_block_request(normalized, score):
         )
 
 def run():
+    init_buffer()
     logger.info(f"SIEM-PME started — environment={ENVIRONMENT} hostname={HOSTNAME}")
-    logger.info(f"Pipeline: collector → normalizer → rules → scorer → elasticsearch → discord")
 
     print(f"{BLUE}[*] SIEM-PME started{RESET}")
     print(f"{BLUE}[*] Environment : {ENVIRONMENT}{RESET}")
